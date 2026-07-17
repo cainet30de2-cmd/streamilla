@@ -796,24 +796,35 @@
         }
         function clicPrograma(event, url, tieneURL, esYouTube, canal, horaInicioPrograma) {
             event.stopPropagation();
+            if (!tieneURL) {
+                mostrarNoDisponible();
+                return;
+            }
             const ahora = new Date();
             const horaActualDecimal = ahora.getHours() + ahora.getMinutes() / 60;
             const inicioProg = horaInicioPrograma;
             if (inicioProg > horaActualDecimal && inicioProg < 24) {
-                if (!tieneURL) return;
                 const quiereRecordatorio = confirm(`El programa comienza a las ${Math.floor(inicioProg).toString().padStart(2,'0')}:${Math.round((inicioProg - Math.floor(inicioProg)) * 60).toString().padStart(2,'0')}. ¿Quieres que te avisemos cuando empiece?`);
                 if (quiereRecordatorio) {
                     const progObj = datosProgramacionActual.find(p => p.canal === canal && Math.abs(p.horaInicio - inicioProg) < 0.01);
-                    if (progObj) { programarRecordatorio(progObj); }
+                    if (progObj) {
+                        programarRecordatorio(progObj);
+                        mostrarOverlay('Transmisión programada', 'Vuelve cuando te avisemos para disfrutar de la transmisión en tiempo real!');
+                        const iframe = document.getElementById('youtubePlayer');
+                        iframe.src = 'about:blank';
+                        urlActualYoutube = '';
+                        ocultarErrorReproductor();
+                        modoAutomatico = false;
+                        actualizarIndicadorAuto();
+                    }
                 }
                 return;
             }
             modoAutomatico = false;
             canalSeleccionado = canal;
             actualizarIndicadorAuto();
-            if (tieneURL && esYouTube) { reproducirVideo(url); }
-            else if (tieneURL) { window.open(url, '_blank'); }
-            else { mostrarNoDisponible(); }
+            if (esYouTube) { reproducirVideo(url); }
+            else { window.open(url, '_blank'); }
         }
         const weatherCodeMap = {
             0: "Despejado", 1: "Mayormente despejado", 2: "Parcialmente nublado", 3: "Nublado",
