@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Grilla TV - 24 horas + YouTube</title>
     <style>
         :root {
@@ -88,6 +88,47 @@
             justify-content: center;
             align-items: stretch;
             gap: 0;
+        }
+
+        /* Pantalla de rotación forzada */
+        .pantalla-rotar {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            color: white;
+            z-index: 9999;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-size: 24px;
+            gap: 20px;
+            pointer-events: all;
+        }
+        .pantalla-rotar .icono-girar {
+            font-size: 80px;
+            animation: rotar 2s infinite;
+        }
+        @keyframes rotar {
+            0% { transform: rotate(0deg); }
+            25% { transform: rotate(90deg); }
+            75% { transform: rotate(90deg); }
+            100% { transform: rotate(0deg); }
+        }
+
+        /* Ocultar contenido cuando se muestra la pantalla de rotación */
+        body.bloqueado .contenedor-central,
+        body.bloqueado .panel-anuncio,
+        body.bloqueado .reloj,
+        body.bloqueado .clima,
+        body.bloqueado .boton-modo,
+        body.bloqueado .boton-ac,
+        body.bloqueado .dropdown-cotizacion {
+            display: none !important;
         }
 
         .panel-anuncio {
@@ -218,21 +259,7 @@
         }
 
         .indicador-auto {
-            position: absolute;
-            top: 12px;
-            right: 16px;
-            background: #4CAF50;
-            color: white;
-            padding: 5px 12px;
-            border-radius: 14px;
-            font-size: 13px;
-            font-weight: bold;
-            z-index: 30;
-            opacity: 0.85;
-            letter-spacing: 1px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
-            transition: all 0.3s;
-            pointer-events: none;
+            display: none !important;
         }
 
         .contenedor-grilla {
@@ -582,12 +609,6 @@
             .dropdown-cotizacion {
                 right: 95px;
             }
-            .indicador-auto {
-                top: 6px;
-                right: 8px;
-                font-size: 10px;
-                padding: 3px 8px;
-            }
         }
 
         @media (max-width: 700px) {
@@ -613,16 +634,18 @@
             .columna-canales {
                 width: 120px;
             }
-            .indicador-auto {
-                top: 4px;
-                right: 6px;
-                font-size: 9px;
-                padding: 2px 6px;
-            }
         }
     </style>
 </head>
 <body class="modo-oscuro">
+
+    <!-- Pantalla de orientación -->
+    <div class="pantalla-rotar" id="pantallaRotar">
+        <div class="icono-girar">📱</div>
+        <div>Por favor, gira tu dispositivo</div>
+        <div style="font-size:18px; opacity:0.8;">La experiencia es mejor en horizontal</div>
+    </div>
+
     <aside class="panel-anuncio" id="panelAnuncioIzq">
         <div style="font-size:12px; opacity:0.6; margin-bottom:10px;">📢 PUBLICIDAD</div>
         <div class="anuncio-placeholder">Anuncio<br>300x250</div>
@@ -632,7 +655,7 @@
     <div class="contenedor-central">
         <div class="reproductor-container" id="reproductorContainer">
             <iframe id="youtubePlayer"
-                src="https://www.youtube-nocookie.com/embed/AjWfY7SnMBI?autoplay=1&mute=0&enablejsapi=1"
+                src="about:blank"
                 frameborder="0"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowfullscreen></iframe>
@@ -644,7 +667,7 @@
                 <span>⚠️ Este video no se puede reproducir aquí</span>
                 <a href="#" target="_blank" id="linkVerYouTube">Ver en YouTube</a>
             </div>
-            <div class="indicador-auto" id="indicadorAuto" style="display:none;">⚡ AUTO</div>
+            <div class="indicador-auto" id="indicadorAuto">⚡ AUTO - Gelatina</div>
         </div>
         <div class="contenedor-grilla" id="contenedorGrilla">
             <div class="grilla-container" id="grillaContainer">
@@ -747,51 +770,118 @@
 
         // Variables para autoreproducción
         let datosProgramacionActual = [];
-        let modoAutomatico = false;        // Inicia en modo manual, NO se reproduce de entrada
-        let ultimaInteraccion = 0;
-        const TIEMPO_REACTIVACION = 30 * 60 * 1000; // 30 minutos de inactividad para reactivar modo automático
+        let modoAutomatico = false;          // Inicia en manual, se activa solo al llegar la hora exacta
+        let canalSeleccionado = 1;           // Canal inicial (Gelatina)
         let programaReproducidoAutomaticamente = null;
-        const CANAL_AUTO_DEFAULT = 1; // Canal por defecto para autoreproducción (Gelatina)
+        const CANAL_AUTO_DEFAULT = 1;
 
+        // ------ Control de orientación ------
+        function verificarOrientacion() {
+            const pantallaRotar = document.getElementById('pantallaRotar');
+            if (window.innerWidth < 768 && window.innerHeight > window.innerWidth) {
+                // Dispositivo móvil en portrait
+                document.body.classList.add('bloqueado');
+                pantallaRotar.style.display = 'flex';
+            } else {
+                document.body.classList.remove('bloqueado');
+                pantallaRotar.style.display = 'none';
+            }
+        }
+        window.addEventListener('resize', verificarOrientacion);
+        window.addEventListener('orientationchange', verificarOrientacion);
+        verificarOrientacion(); // comprobación inicial
+
+        // ------ Recordatorios (Notifications) ------
+        function pedirPermisoNotificaciones() {
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+        }
+        // Intentar pedir permiso al cargar (el navegador puede bloquearlo sin gesto de usuario, pero lo intentamos)
+        window.addEventListener('load', pedirPermisoNotificaciones);
+
+        function programarRecordatorio(programa) {
+            const ahora = new Date();
+            const horaInicio = programa.horaInicio;
+            const inicioH = Math.floor(horaInicio);
+            const inicioM = Math.round((horaInicio - inicioH) * 60);
+            const fechaInicio = new Date(ahora);
+            fechaInicio.setHours(inicioH, inicioM, 0, 0);
+
+            // Si la hora ya pasó (por si acaso), no programar
+            if (fechaInicio <= ahora) {
+                alert('El programa ya está en emisión o ya pasó.');
+                return;
+            }
+
+            const msRestantes = fechaInicio - ahora;
+
+            // Usar setTimeout para mostrar notificación en el momento exacto
+            setTimeout(() => {
+                if ('Notification' in window && Notification.permission === 'granted') {
+                    new Notification('⏰ Recordatorio de programa', {
+                        body: `¡Empieza "${programa.titulo}" en ${obtenerNombreCanal(programa.canal)}!`,
+                        icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">📺</text></svg>'
+                    });
+                } else {
+                    // Fallback si no hay permiso: alerta
+                    alert(`⏰ ¡Empieza "${programa.titulo}" en ${obtenerNombreCanal(programa.canal)}!`);
+                }
+            }, msRestantes);
+
+            alert(`Recordatorio programado para las ${inicioH.toString().padStart(2,'0')}:${inicioM.toString().padStart(2,'0')}.`);
+        }
+
+        // ------ Lógica de clic en programa (modificada) ------
+        function clicPrograma(event, url, tieneURL, esYouTube, canal, horaInicioPrograma) {
+            event.stopPropagation();
+
+            // Verificar si el programa es futuro
+            const ahora = new Date();
+            const horaActualDecimal = ahora.getHours() + ahora.getMinutes() / 60;
+            const inicioProg = horaInicioPrograma;
+
+            // Si el inicio es futuro y no es un programa sin horario (sinProgramacion), ofrecer recordatorio
+            if (inicioProg > horaActualDecimal && inicioProg < 24) {
+                const quiereRecordatorio = confirm(`El programa comienza a las ${Math.floor(inicioProg).toString().padStart(2,'0')}:${Math.round((inicioProg - Math.floor(inicioProg)) * 60).toString().padStart(2,'0')}. ¿Quieres que te avisemos cuando empiece?`);
+                if (quiereRecordatorio) {
+                    const progObj = datosProgramacionActual.find(p => p.canal === canal && Math.abs(p.horaInicio - inicioProg) < 0.01);
+                    if (progObj) {
+                        programarRecordatorio(progObj);
+                    }
+                }
+                return; // No hacer nada más (no cambiar canal, no reproducir)
+            }
+
+            // Si no es futuro, proceder normalmente
+            modoAutomatico = false;
+            canalSeleccionado = canal;
+            actualizarIndicadorAuto();
+            if (tieneURL && esYouTube) {
+                reproducirVideo(url);
+            } else if (tieneURL) {
+                window.open(url, '_blank');
+            } else {
+                mostrarNoDisponible();
+            }
+        }
+
+        // ------ Funciones del reproductor (sin cambios importantes) ------
         const weatherCodeMap = {
-            0: "Despejado",
-            1: "Mayormente despejado",
-            2: "Parcialmente nublado",
-            3: "Nublado",
-            45: "Niebla",
-            48: "Niebla con escarcha",
-            51: "Llovizna ligera",
-            53: "Llovizna moderada",
-            55: "Llovizna densa",
-            61: "Lluvia ligera",
-            63: "Lluvia moderada",
-            65: "Lluvia intensa",
-            80: "Chubascos ligeros",
-            81: "Chubascos moderados",
-            82: "Chubascos violentos",
-            95: "Tormenta",
-            96: "Tormenta con granizo ligero",
-            99: "Tormenta con granizo intenso"
+            0: "Despejado", 1: "Mayormente despejado", 2: "Parcialmente nublado", 3: "Nublado",
+            45: "Niebla", 48: "Niebla con escarcha",
+            51: "Llovizna ligera", 53: "Llovizna moderada", 55: "Llovizna densa",
+            61: "Lluvia ligera", 63: "Lluvia moderada", 65: "Lluvia intensa",
+            80: "Chubascos ligeros", 81: "Chubascos moderados", 82: "Chubascos violentos",
+            95: "Tormenta", 96: "Tormenta con granizo ligero", 99: "Tormenta con granizo intenso"
         };
         const weatherEmojiMap = {
-            0: "☀️",
-            1: "🌤️",
-            2: "⛅",
-            3: "☁️",
-            45: "🌫️",
-            48: "🌫️",
-            51: "🌦️",
-            53: "🌦️",
-            55: "🌧️",
-            61: "🌧️",
-            63: "🌧️",
-            65: "🌧️",
-            80: "🌦️",
-            81: "🌧️",
-            82: "🌧️",
-            95: "⛈️",
-            96: "⛈️",
-            99: "⛈️"
+            0: "☀️", 1: "🌤️", 2: "⛅", 3: "☁️",
+            45: "🌫️", 48: "🌫️",
+            51: "🌦️", 53: "🌦️", 55: "🌧️",
+            61: "🌧️", 63: "🌧️", 65: "🌧️",
+            80: "🌦️", 81: "🌧️", 82: "🌧️",
+            95: "⛈️", 96: "⛈️", 99: "⛈️"
         };
 
         function obtenerClima() {
@@ -832,8 +922,7 @@
                         const nombre = item.nombre || item.casa || 'Desconocido';
                         const compra = item.compra !== undefined ? item.compra.toFixed(2) : 'N/D';
                         const venta = item.venta !== undefined ? item.venta.toFixed(2) : 'N/D';
-                        texto +=
-                            `<div class="cotizacion-item">${nombre}: Compra $${compra} | Venta $${venta}</div>`;
+                        texto += `<div class="cotizacion-item">${nombre}: Compra $${compra} | Venta $${venta}</div>`;
                     });
                     return fetch('https://dolarapi.com/v1/cotizaciones')
                         .then(response => response.json())
@@ -842,16 +931,13 @@
                                 return cotizaciones.find(item => {
                                     const nombre = (item.nombre || '').toLowerCase();
                                     const casa = (item.casa || '').toLowerCase();
-                                    return nombres.some(n => nombre.includes(n) || casa.includes(
-                                        n));
+                                    return nombres.some(n => nombre.includes(n) || casa.includes(n));
                                 });
                             }
                             const euro = buscarCotizacion(['euro']);
                             const real = buscarCotizacion(['real', 'brasil']);
-                            if (euro) texto +=
-                                `<div class="cotizacion-item">Euro: Compra € ${euro.compra.toFixed(2)} | Venta € ${euro.venta.toFixed(2)}</div>`;
-                            if (real) texto +=
-                                `<div class="cotizacion-item">Real: Compra R$ ${real.compra.toFixed(2)} | Venta R$ ${real.venta.toFixed(2)}</div>`;
+                            if (euro) texto += `<div class="cotizacion-item">Euro: Compra € ${euro.compra.toFixed(2)} | Venta € ${euro.venta.toFixed(2)}</div>`;
+                            if (real) texto += `<div class="cotizacion-item">Real: Compra R$ ${real.compra.toFixed(2)} | Venta R$ ${real.venta.toFixed(2)}</div>`;
                             if (texto === '') texto = 'Cotización no disponible';
                             contenido.innerHTML = texto;
                         });
@@ -890,6 +976,10 @@
         }
 
         function mostrarNoDisponible() {
+            const iframe = document.getElementById('youtubePlayer');
+            iframe.src = 'about:blank';
+            urlActualYoutube = '';
+            ocultarErrorReproductor();
             mostrarOverlay('Transmisión no disponible', 'Este programa no tiene un enlace disponible');
         }
 
@@ -920,45 +1010,39 @@
             }
         }
 
-        // Manejador de clics en programas (desactiva modo automático)
-        function clicPrograma(event, url, tieneURL, esYouTube) {
-            event.stopPropagation();
-            modoAutomatico = false;
-            ultimaInteraccion = Date.now();
-            actualizarIndicadorAuto();
-            if (tieneURL && esYouTube) {
-                reproducirVideo(url);
-            } else if (tieneURL) {
-                window.open(url, '_blank');
-            } else {
-                mostrarNoDisponible();
-            }
+        function obtenerNombreCanal(numero) {
+            const nombres = {
+                1: "Gelatina", 2: "FutuRock", 3: "Olga", 4: "LuzuTV", 5: "Vorterix",
+                6: "Disney Channel", 7: "Cartoon Network", 8: "Warner", 9: "HBO", 10: "Cinecanal"
+            };
+            return nombres[numero] || `Canal ${numero}`;
         }
 
         function actualizarIndicadorAuto() {
             const indicador = document.getElementById('indicadorAuto');
+            const nombre = obtenerNombreCanal(canalSeleccionado);
             if (modoAutomatico) {
-                indicador.style.display = 'block';
+                indicador.textContent = `⚡ AUTO - ${nombre}`;
+                indicador.classList.remove('manual');
             } else {
-                indicador.style.display = 'none';
+                indicador.textContent = `🔴 MANUAL - ${nombre}`;
+                indicador.classList.add('manual');
             }
         }
 
-        // Busca y reproduce el programa actual según el horario para el canal por defecto
         function reproducirProgramaSegunHorario(hora, minutos) {
             if (!datosProgramacionActual || datosProgramacionActual.length === 0) return;
+            if (!modoAutomatico) return;
 
             const horaDecimal = hora + minutos / 60;
-            const canalDefault = CANAL_AUTO_DEFAULT;
+            const canal = canalSeleccionado;
 
-            // Filtrar programas del canal por defecto
-            const programasCanal = datosProgramacionActual.filter(p => p.canal === canalDefault);
+            const programasCanal = datosProgramacionActual.filter(p => p.canal === canal);
 
             let programaActual = null;
             for (const prog of programasCanal) {
                 const inicio = prog.horaInicio;
                 const fin = inicio + prog.duracion;
-                // Manejar wrap-around de medianoche
                 if (fin > 24) {
                     if (horaDecimal >= inicio || horaDecimal < (fin - 24)) {
                         programaActual = prog;
@@ -974,7 +1058,6 @@
 
             if (!programaActual) return;
 
-            // Si ya reprodujimos este programa automáticamente, no hacer nada
             if (programaReproducidoAutomaticamente === programaActual) return;
 
             programaReproducidoAutomaticamente = programaActual;
@@ -984,7 +1067,6 @@
                 if (esYouTube) {
                     reproducirVideo(programaActual.url);
                 } else {
-                    // URL no es de YouTube, no podemos embeberla, mostrar mensaje
                     mostrarOverlay('Programa actual: ' + programaActual.titulo,
                         'El enlace no es un video de YouTube embebible');
                 }
@@ -1139,16 +1221,23 @@
                 const m = ahora.getMinutes();
                 actualizarLineaTiempo(h, m);
 
-                // Lógica de autoreproducción (solo si está en modo automático)
                 if (modoAutomatico) {
                     reproducirProgramaSegunHorario(h, m);
-                } else if (ultimaInteraccion > 0 && (Date.now() - ultimaInteraccion) > TIEMPO_REACTIVACION) {
-                    // Reactivar modo automático después de inactividad prolongada
-                    modoAutomatico = true;
-                    programaReproducidoAutomaticamente = null;
-                    actualizarIndicadorAuto();
-                    console.log('Modo automático reactivado por inactividad');
-                    reproducirProgramaSegunHorario(h, m);
+                } else {
+                    // Reactivar automáticamente al inicio exacto del siguiente programa del canal actual
+                    for (const prog of datosProgramacionActual) {
+                        if (prog.canal === canalSeleccionado) {
+                            const inicioH = Math.floor(prog.horaInicio);
+                            const inicioM = Math.round((prog.horaInicio - inicioH) * 60);
+                            if (h === inicioH && m === inicioM) {
+                                modoAutomatico = true;
+                                programaReproducidoAutomaticamente = null;
+                                actualizarIndicadorAuto();
+                                reproducirProgramaSegunHorario(h, m);
+                                break;
+                            }
+                        }
+                    }
                 }
             }
             actualizar();
@@ -1178,7 +1267,7 @@
             let inicioDatos = 0;
             const primera = lineas[0].trim().toLowerCase();
             if (primera.startsWith('canal') && (primera.includes('horainicio') || primera.includes('horaFin')))
-        inicioDatos = 1;
+                inicioDatos = 1;
             for (let i = inicioDatos; i < lineas.length; i++) {
                 const linea = lineas[i].trim();
                 if (linea === '') continue;
@@ -1382,8 +1471,7 @@
             for (let m = 0; m < mediaHoras; m++) {
                 const hora = Math.floor(m / 2);
                 const minuto = m % 2 === 0 ? '00' : '30';
-                grillaHTML +=
-                    `<div class="celda encabezado">${hora.toString().padStart(2,"0")}:${minuto}</div>`;
+                grillaHTML += `<div class="celda encabezado">${hora.toString().padStart(2,"0")}:${minuto}</div>`;
             }
 
             for (let canal = 1; canal <= canales; canal++) {
@@ -1391,13 +1479,10 @@
                 const { asignacion, numPistas } = info;
                 const alturaPorPista = numPistas > 0 ? alturaFila / numPistas : alturaFila;
 
-                let contenedorHtml =
-                    `<div class="celda" style="grid-column: 1 / -1; position: relative; padding:0; overflow:visible; height:${alturaFila}px;">`;
-                contenedorHtml +=
-                    `<div style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; display:flex; flex-direction:row;">`;
+                let contenedorHtml = `<div class="celda" style="grid-column: 1 / -1; position: relative; padding:0; overflow:visible; height:${alturaFila}px;">`;
+                contenedorHtml += `<div style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; display:flex; flex-direction:row;">`;
                 for (let m = 0; m < mediaHoras; m++) {
-                    contenedorHtml +=
-                        `<div class="linea-divisoria" style="border-left:1px solid var(--borde); height:100%; width:${anchoMediaHoraBase}px; flex-shrink:0; margin-left:-0.03px;"></div>`;
+                    contenedorHtml += `<div class="linea-divisoria" style="border-left:1px solid var(--borde); height:100%; width:${anchoMediaHoraBase}px; flex-shrink:0; margin-left:-0.03px;"></div>`;
                 }
                 contenedorHtml += `</div>`;
 
@@ -1413,42 +1498,37 @@
                         colorFondo = color || "#444";
                     }
 
+                    // Pasar horaInicioOriginal (o inicio) al onclick para verificar si es futuro
+                    const inicioParaOnClick = horaInicioOriginal !== undefined ? horaInicioOriginal : inicio;
                     let onclickAttr;
                     if (tieneURL) {
                         const esYouTube = extraerIDYouTube(url);
-                        onclickAttr =
-                            `onclick="clicPrograma(event, '${url.replace(/'/g, "\\'")}', true, ${esYouTube ? 'true' : 'false'})"`;
+                        onclickAttr = `onclick="clicPrograma(event, '${url.replace(/'/g, "\\'")}', true, ${esYouTube ? 'true' : 'false'}, ${canal}, ${inicioParaOnClick})"`;
                     } else if (sinProgramacion) {
                         onclickAttr = '';
                     } else {
-                        onclickAttr = `onclick="clicPrograma(event, null, false, false)"`;
+                        onclickAttr = `onclick="clicPrograma(event, null, false, false, ${canal}, ${inicioParaOnClick})"`;
                     }
 
-                    const inicioMostrar = horaInicioOriginal !== undefined ? horaInicioOriginal :
-                        inicio;
+                    const inicioMostrar = horaInicioOriginal !== undefined ? horaInicioOriginal : inicio;
                     const finMostrar = horaFinOriginal !== undefined ? horaFinOriginal : fin;
 
                     const inicioHoras = Math.floor(inicioMostrar);
                     const inicioMinutos = Math.round((inicioMostrar - inicioHoras) * 60);
                     const finHoras = Math.floor(finMostrar);
                     const finMinutos = Math.round((finMostrar - finHoras) * 60);
-                    const inicioStr =
-                        `${inicioHoras.toString().padStart(2,"0")}:${inicioMinutos.toString().padStart(2,"0")}`;
-                    const finStr =
-                        `${finHoras.toString().padStart(2,"0")}:${finMinutos.toString().padStart(2,"0")}`;
+                    const inicioStr = `${inicioHoras.toString().padStart(2,"0")}:${inicioMinutos.toString().padStart(2,"0")}`;
+                    const finStr = `${finHoras.toString().padStart(2,"0")}:${finMinutos.toString().padStart(2,"0")}`;
 
-                    const presentadoresHtml = (!sinProgramacion && presentadores) ?
-                        `<div class="presentadores">${presentadores}</div>` : '';
-                    const horarioHtml = !sinProgramacion ?
-                        `<div class="horario">${inicioStr} - ${finStr}</div>` : '';
+                    const presentadoresHtml = (!sinProgramacion && presentadores) ? `<div class="presentadores">${presentadores}</div>` : '';
+                    const horarioHtml = !sinProgramacion ? `<div class="horario">${inicioStr} - ${finStr}</div>` : '';
 
                     const left = inicio * anchoHoraBase;
                     const width = duracion * anchoHoraBase;
                     const top = pista * alturaPorPista;
                     const height = alturaPorPista;
 
-                    const fontSizePlaceholder = sinProgramacion ? Math.min(height * 0.5, width * 0.15) :
-                        (10 * escalaActual);
+                    const fontSizePlaceholder = sinProgramacion ? Math.min(height * 0.5, width * 0.15) : (10 * escalaActual);
                     const claseExtra = sinProgramacion ? ' sin-programacion' : '';
 
                     contenedorHtml += `
@@ -1471,9 +1551,10 @@
             actualizarLineaTiempo(horaActual, minutosActual);
             aplicarZoom();
 
-            // Siempre mostrar el overlay al inicio porque empezamos en modo manual
             if (!modoAutomatico) {
                 mostrarOverlay('Seleccione un programa', 'Haga clic en cualquier programa de la grilla');
+            } else {
+                ocultarOverlay();
             }
         }
 
@@ -1525,8 +1606,7 @@
             const anio = partes.find(p => p.type === 'year').value;
             const fechaActualStr = `${anio}-${mes}-${dia}`;
             if (ultimaFechaCargaStr && fechaActualStr !== ultimaFechaCargaStr) {
-                console.log(
-                    `Cambio de día detectado: ${ultimaFechaCargaStr} → ${fechaActualStr}. Recargando programación...`);
+                console.log(`Cambio de día detectado: ${ultimaFechaCargaStr} → ${fechaActualStr}. Recargando programación...`);
                 cargarProgramacion();
             }
         }
@@ -1554,8 +1634,7 @@
                 anio = ahora.getFullYear();
             }
 
-            ultimaFechaCargaStr =
-                `${anio}-${String(mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+            ultimaFechaCargaStr = `${anio}-${String(mes + 1).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
             const nombreMes = meses[mes];
             const ruta = `./Programación/${nombreMes}/${dia}.csv`;
 
@@ -1574,19 +1653,17 @@
             }
 
             if (datos) {
-                // Guardar datos globalmente para autoreproducción
                 datosProgramacionActual = datos;
 
-                // Empezar en modo manual, sin reproducción automática
-                modoAutomatico = false;
+                if (!canalSeleccionado) canalSeleccionado = CANAL_AUTO_DEFAULT;
                 programaReproducidoAutomaticamente = null;
-                ultimaInteraccion = 0; // Sin interacción previa
                 actualizarIndicadorAuto();
 
                 const escalaMin = obtenerEscalaMinima();
                 if (escalaActual > 1) escalaActual = 1;
                 if (escalaActual < escalaMin) escalaActual = escalaMin;
                 renderizarGrilla(datos, hora, minutos);
+
                 iniciarActualizacionAutomatica();
             } else {
                 mostrarErrorGrilla();
