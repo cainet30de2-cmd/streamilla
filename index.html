@@ -257,7 +257,26 @@
         }
 
         .indicador-auto {
-            display: none !important;
+            position: absolute;
+            top: 12px;
+            right: 16px;
+            background: #4CAF50;
+            color: white;
+            padding: 5px 12px;
+            border-radius: 14px;
+            font-size: 13px;
+            font-weight: bold;
+            z-index: 30;
+            opacity: 0.85;
+            letter-spacing: 1px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+            transition: all 0.3s;
+            white-space: nowrap;
+            cursor: default;
+        }
+
+        .indicador-auto.manual {
+            background: #d32f2f;
         }
 
         .contenedor-grilla {
@@ -661,6 +680,12 @@
                 font-size: 10px;
                 top: 35px;
             }
+            .indicador-auto {
+                top: 6px;
+                right: 8px;
+                font-size: 10px;
+                padding: 3px 8px;
+            }
         }
     </style>
 </head>
@@ -780,19 +805,41 @@
         let programaReproducidoAutomaticamente = null;
         const CANAL_AUTO_DEFAULT = 1;
 
+        async function forzarLandscape() {
+            try {
+                if (screen.orientation && screen.orientation.lock) {
+                    await screen.orientation.lock('landscape');
+                    console.log('Orientación bloqueada en landscape');
+                }
+            } catch (error) {
+                console.log('No se pudo bloquear la orientación:', error);
+            }
+        }
+
         function verificarOrientacion() {
             const pantallaRotar = document.getElementById('pantallaRotar');
             if (window.innerWidth < 768 && window.innerHeight > window.innerWidth) {
-                document.body.classList.add('bloqueado');
-                pantallaRotar.style.display = 'flex';
+                forzarLandscape();
+                setTimeout(() => {
+                    if (window.innerHeight > window.innerWidth) {
+                        document.body.classList.add('bloqueado');
+                        pantallaRotar.style.display = 'flex';
+                    }
+                }, 500);
             } else {
                 document.body.classList.remove('bloqueado');
                 pantallaRotar.style.display = 'none';
             }
         }
+
         window.addEventListener('resize', verificarOrientacion);
-        window.addEventListener('orientationchange', verificarOrientacion);
-        verificarOrientacion();
+        window.addEventListener('orientationchange', () => {
+            setTimeout(verificarOrientacion, 300);
+        });
+        window.addEventListener('load', () => {
+            forzarLandscape();
+            verificarOrientacion();
+        });
 
         function pedirPermisoNotificaciones() {
             if ('Notification' in window && Notification.permission === 'default') {
